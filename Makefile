@@ -1,6 +1,6 @@
 .PHONY: build
 
-tag := v1.0.1
+tag := $(shell git describe --tags --abbrev=0)
 
 
 build:
@@ -9,4 +9,4 @@ build:
 	GOOS=darwin GOARCH=amd64 go build -o build/gh-webhooker-darwin-amd64
 
 release: build
-	gh release create v1.0.1 ./build/*amd64*
+	gh release create $(tag) ./build/*amd64* --latest

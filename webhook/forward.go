@@ -86,7 +86,7 @@ func runFwd(out io.Writer, url, token, wsURL string, activateHook func() error) 
 	if url == "" {
 		fmt.Fprintln(os.Stderr, "notice: no `--url` specified; printing webhook payloads to stdout")
 	}
-	for i := 0; i < 3; i++ {
+	for {
 		err := handleWebsocket(out, url, token, wsURL, activateHook)
 		if err != nil {
 			// If the error is a server disconnect (1006), retry connecting
@@ -99,25 +99,15 @@ func runFwd(out io.Writer, url, token, wsURL string, activateHook func() error) 
 			return err
 		}
 	}
-	return fmt.Errorf("unable to connect to webhooks server, forwarding stopped")
 }
 
 // handleWebsocket mediates between websocket server and local web server
 func handleWebsocket(out io.Writer, url, token, wsURL string, activateHook func() error) error {
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Authorization": {token}})
+	c, err := dial(token, wsURL)
 	if err != nil {
 		return fmt.Errorf("error dialing to ws server: %w", err)
 	}
-	defer func() {
-		if err = c.Close(); err != nil {
-			if websocket.IsCloseError(err, websocket.CloseAbnormalClosure) {
-				time.Sleep(5 * time.Second)
-				return
-			} else if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				return
-			}
-		}
-	}()
+	defer c.Close()
 
 	fmt.Fprintln(os.Stderr, "Forwarding Webhook events from GitHub...")
 	if err := activateHook(); err != nil {
@@ -126,19 +116,17 @@ func handleWebsocket(out io.Writer, url, token, wsURL string, activateHook func(
 
 	for {
 		var ev wsEventReceived
-		err = c.ReadJSON(&ev)
+		err := c.ReadJSON(&ev)
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseAbnormalClosure) {
-				time.Sleep(5 * time.Second)
-				continue
-			}
 			return fmt.Errorf("error receiving json event: %w", err)
 		}
 
 		resp, err := forwardEvent(out, url, ev)
 		if err != nil {
-			return fmt.Errorf("error forwarding event: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: error forwarding event: %v\n", err)
+			continue
 		}
+
 		err = c.WriteJSON(resp)
 		if err != nil {
 			return fmt.Errorf("error writing json event: %w", err)
@@ -180,6 +168,7 @@ func forwardEvent(w io.Writer, url string, ev wsEventReceived) (*httpEventForwar
 		if _, err := w.Write([]byte("\n")); err != nil {
 			return nil, err
 		}
+		return &httpEventForward{Status: 200, Header: make(http.Header), Body: []byte("OK")}, nil
 	}
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(ev.Body))
@@ -196,6 +185,7 @@ func forwardEvent(w io.Writer, url string, ev wsEventReceived) (*httpEventForwar
 		return nil, err
 	}
 
+	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

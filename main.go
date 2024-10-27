@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/cli/gh-webhook/webhook"
+	"github.com/by-sabbir/gh-webhooker/webhook"
 )
 
 func main() {

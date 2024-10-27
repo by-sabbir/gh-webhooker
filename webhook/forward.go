@@ -27,7 +27,7 @@ func NewCmdForward() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "forwarder --events=<types> [--url=<url>]",
+		Use:   "forward --events=<types> [--url=<url>]",
 		Short: "Receive test events locally",
 		Example: heredoc.Doc(`
 			# create a dev webhook for the 'issue_open' event in the monalisa/smile repo in GitHub running locally, and
@@ -117,9 +117,14 @@ func handleWebsocket(out io.Writer, url, token, wsURL string, activateHook func(
 
 	for {
 		var ev wsEventReceived
+
+		if ev.Header.Get("Content-Type") != "application/json" {
+			continue
+		}
+
 		err := c.ReadJSON(&ev)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error receiving json event: %w", err)
+			fmt.Println("non json data")
 			continue
 		}
 
